@@ -1,0 +1,10 @@
+{
+  "name": "openclaw-search",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run search.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
