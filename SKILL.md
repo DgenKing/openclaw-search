@@ -92,9 +92,45 @@ The tool prints **only JSON to stdout**. Errors go to stderr.
 - **count**: Number of results returned (0 means no results found, not an error)
 - **instance_used**: Which SearxNG server was used (for debugging)
 
+## Self-Hosted Setup (Recommended)
+
+For reliable, rate-limit-free searches, run SearxNG locally with Docker:
+
+### One-time setup
+
+```bash
+cd {baseDir}
+docker compose up -d
+```
+
+### Verify it's running
+
+```bash
+curl "http://localhost:8888/search?q=test&format=json"
+```
+
+### Docker commands
+
+| Command | What |
+|---------|------|
+| `docker compose up -d` | Start SearxNG (runs in background) |
+| `docker compose down` | Stop SearxNG |
+| `docker compose logs -f` | Debug issues |
+| `docker compose restart` | Restart after config change |
+
+The CLI automatically connects to `http://localhost:8888` by default. Set `SEARXNG_URL` to override:
+
+```bash
+# Use default localhost instance
+cd {baseDir} && bun run search.ts "query"
+
+# Use custom instance
+SEARXNG_URL=http://my-instance:8888 cd {baseDir} && bun run search.ts "query"
+```
+
 ## Important notes
 
 - If count is 0, the search succeeded but found nothing — try rephrasing the query
-- If the tool exits with code 1, all 10 SearxNG instances failed — this is usually temporary, retry after a few seconds
-- Results are from public SearxNG instances (meta-search engines) — they aggregate Google, Bing, DuckDuckGo, and others
+- If the tool exits with code 1, all instances failed — local Docker takes priority, then falls back to public instances
+- Results are from SearxNG (meta-search engine) — it aggregates Google, Bing, DuckDuckGo, Brave, and Wikipedia
 - No API key or payment is ever needed

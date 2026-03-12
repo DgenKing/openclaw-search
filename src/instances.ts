@@ -1,16 +1,23 @@
 import type { Instance } from "./types.ts";
 
+const DEFAULT_LOCAL_URL = "http://localhost:8888";
+
 const INSTANCE_URLS = [
-  "https://priv.au",
   "https://search.rhscz.eu",
   "https://searx.tiekoetter.com",
   "https://search.inetol.net",
-  "https://searxng.site",
   "https://search.rowie.at",
   "https://ooglester.com",
-  "https://search.abohiccups.com",
+  "https://search.pi.vps.pw",
+  "https://searxng.shreven.org",
+  "https://kantan.cat",
+  "https://searx.ro",
+  "https://searxng.website",
+  "https://search.sapti.me",
+  "https://search.hbubli.cc",
   "https://search.bladerunn.in",
-  "https://searx.namejeff.xyz",
+  "https://searxng.canine.tools",
+  "https://search.minus27315.dev",
 ];
 
 let instances: Instance[] = [];
@@ -26,7 +33,16 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 export function initializeInstances(): void {
-  const shuffledUrls = shuffleArray(INSTANCE_URLS);
+  // Priority: SEARXNG_URL env var > localhost:8888 > public instances
+  const customUrl = process.env.SEARXNG_URL;
+  const localUrl = customUrl ? customUrl.replace(/\/+$/, "") : DEFAULT_LOCAL_URL;
+
+  // Local instance first, then public instances as fallback
+  const urls = [localUrl, ...INSTANCE_URLS];
+
+  // Don't shuffle if using custom URL or localhost - keep local first
+  const shuffledUrls = customUrl ? urls : urls;
+
   instances = shuffledUrls.map((url) => ({
     url,
     healthy: true,

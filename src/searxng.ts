@@ -4,9 +4,8 @@ import {
   getNextInstance,
   markInstanceUnhealthy,
   markInstanceHealthy,
-  getAllInstanceUrls,
 } from "./instances.ts";
-import { formatResponse, outputError } from "./format.ts";
+import { formatResponse } from "./format.ts";
 
 export interface SearchOptions {
   query: string;
@@ -14,9 +13,17 @@ export interface SearchOptions {
   category?: string;
   timeRange?: string;
   engines?: string;
+  verbose?: boolean;
 }
 
-const DEFAULT_TIMEOUT = 8000; // 8 seconds
+const LOCAL_TIMEOUT = 15000; // 15 seconds for local instance
+const PUBLIC_TIMEOUT = 8000; // 8 seconds for public instances
+
+const DEFAULT_LOCAL_URL = "http://localhost:8888";
+
+function isLocalInstance(url: string): boolean {
+  return url.startsWith(DEFAULT_LOCAL_URL) || url.includes("localhost:8888");
+}
 
 async function fetchWithTimeout(
   url: string,
@@ -36,6 +43,26 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function fetchWithRetry(
+  url: string,
+  timeout: number,
+  maxRetries: number = 3
+): Promise<Response> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, timeout);
+      return response;
+    } catch (error) {
+      if (attempt < maxRetries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
 }
 
 function buildSearchUrl(
@@ -63,57 +90,107 @@ function buildSearchUrl(
   return new URL(`${instanceUrl}/search?${params.toString()}`);
 }
 
+export class SearchError extends Error {
+  constructor(
+    message: string,
+    public readonly query: string,
+    public readonly attemptedInstances: string[]
+  ) {
+    super(message);
+    this.name = "SearchError";
+  }
+}
+
 export async function search(options: SearchOptions): Promise<SearchResponse> {
   initializeInstances();
 
   const attemptedInstances: string[] = [];
   const maxAttempts = 10;
+  const pages = options.pages || 1;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const instance = getNextInstance();
+  // Collect results across all requested pages
+  let allResults: SearchResponse | null = null;
 
-    if (!instance) {
-      throw new Error("No instances available");
-    }
+  for (let page = 1; page <= pages; page++) {
+    let pageResult: SearchResponse | null = null;
 
-    attemptedInstances.push(instance.url);
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const instance = getNextInstance();
 
-    const url = buildSearchUrl(instance.url, options);
-    const startTime = Date.now();
+      if (!instance) {
+        throw new SearchError("No instances available", options.query, attemptedInstances);
+      }
 
-    try {
-      const response = await fetchWithTimeout(url.toString(), DEFAULT_TIMEOUT);
+      if (!attemptedInstances.includes(instance.url)) {
+        attemptedInstances.push(instance.url);
+      }
 
-      if (!response.ok) {
+      const pageOptions = { ...options, pages: undefined };
+      const url = buildSearchUrl(instance.url, pageOptions);
+      // Set actual page number
+      url.searchParams.set("pageno", String(page));
+
+      const startTime = Date.now();
+      const isLocal = isLocalInstance(instance.url);
+      const timeout = isLocal ? LOCAL_TIMEOUT : PUBLIC_TIMEOUT;
+
+      try {
+        // Use retry logic for local instances
+        const response = isLocal
+          ? await fetchWithRetry(url.toString(), timeout, 3)
+          : await fetchWithTimeout(url.toString(), timeout);
+
+        if (!response.ok) {
+          if (options.verbose) {
+            console.error(`[${instance.url}] HTTP ${response.status} ${response.statusText}`);
+          }
+          markInstanceUnhealthy(instance.url);
+          continue;
+        }
+
+        const text = await response.text();
+        if (options.verbose) {
+          console.error(`[${instance.url}] 200 OK, body starts: ${text.slice(0, 120)}`);
+        }
+
+        // Check if response is actually JSON (not an HTML block page)
+        if (!text.trimStart().startsWith("{") && !text.trimStart().startsWith("[")) {
+          if (options.verbose) {
+            console.error(`[${instance.url}] Not JSON — got HTML/text response`);
+          }
+          markInstanceUnhealthy(instance.url);
+          continue;
+        }
+
+        const data = JSON.parse(text) as SearxNGResponse;
+        const responseTime = Date.now() - startTime;
+
+        markInstanceHealthy(instance.url, responseTime);
+
+        pageResult = formatResponse(options.query, data, instance.url, page);
+        break;
+      } catch (error) {
+        if (options.verbose) {
+          console.error(`[${instance.url}] Error: ${error instanceof Error ? error.message : error}`);
+        }
         markInstanceUnhealthy(instance.url);
         continue;
       }
+    }
 
-      const data = (await response.json()) as SearxNGResponse;
-      const responseTime = Date.now() - startTime;
+    if (!pageResult) {
+      throw new SearchError("All SearxNG instances failed", options.query, attemptedInstances);
+    }
 
-      markInstanceHealthy(instance.url, responseTime);
-
-      // Return normalized response
-      return formatResponse(
-        options.query,
-        data,
-        instance.url,
-        options.pages || 1
-      );
-    } catch (error) {
-      markInstanceUnhealthy(instance.url);
-      continue;
+    if (!allResults) {
+      allResults = pageResult;
+    } else {
+      // Merge page results
+      allResults.results.push(...pageResult.results);
+      allResults.count = allResults.results.length;
+      allResults.page = page;
     }
   }
 
-  // All instances failed
-  const error = {
-    error: "All SearxNG instances failed",
-    query: options.query,
-    attempted_instances: attemptedInstances,
-  };
-
-  outputError(error);
-  process.exit(1);
+  return allResults!;
 }

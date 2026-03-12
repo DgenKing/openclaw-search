@@ -1,20 +1,38 @@
 # openclaw-search
 
-Free, keyless web search for [OpenClaw](https://docs.openclaw.ai) agents. Queries public [SearxNG](https://docs.searxng.org) instances and returns structured JSON — no API keys, no cost, no rate limits (within reason).
+[![GitHub](https://img.shields.io/github/license/DgenKing/openclaw-search)](https://github.com/DgenKing/openclaw-search)
+
+**Repo:** [github.com/DgenKing/openclaw-search](https://github.com/DgenKing/openclaw-search)
+
+Self-hosted web search for [OpenClaw](https://docs.openclaw.ai) agents. Runs a local SearxNG instance via Docker and falls back to public instances — no API keys, no rate limits.
 
 Built with **Bun + TypeScript**. Zero npm dependencies.
 
 ---
 
-## What It Does
+## Quick Start
 
-`openclaw-search` is an OpenClaw skill that gives your agent real-time web search. When a user asks something that needs current information, OpenClaw loads this skill and runs the CLI tool. The tool hits public SearxNG meta-search instances (which aggregate Google, Bing, DuckDuckGo, Brave, and others), normalizes the results, and outputs clean JSON to stdout.
+```bash
+# 1. Clone into OpenClaw skills directory
+git clone https://github.com/DgenKing/openclaw-search.git ~/.openclaw/skills/openclaw-search
 
-**Why SearxNG?**
-- Free forever — no API keys, no billing, no quotas
-- Meta-search — one query hits multiple engines (Google, Bing, DDG, etc.)
-- Privacy-respecting — no tracking, no ads in results
-- Dozens of public instances — if one goes down, the tool automatically tries another
+# 2. Start the local SearxNG instance
+cd ~/.openclaw/skills/openclaw-search
+docker compose up -d
+
+# 3. Verify it's running
+curl "http://localhost:8888/search?q=test&format=json"
+
+# 4. Use it (OpenClaw will auto-discover the skill)
+```
+
+---
+
+## Why Self-Hosted?
+
+Public SearxNG instances share a common rate-limiter. Once your IP gets flagged (even from light usage), every instance returns 429. VPN doesn't help — the blocklists propagate.
+
+**The solution:** Run your own SearxNG locally via Docker. The CLI connects to `localhost:8888` first, with public instances as fallback.
 
 ---
 
@@ -23,17 +41,13 @@ Built with **Bun + TypeScript**. Zero npm dependencies.
 ### Prerequisites
 
 - [Bun](https://bun.sh) v1.0+ installed and on PATH
+- [Docker](https://docker.com) installed and running
 
 ### Install as OpenClaw Skill
 
-Copy or symlink the project into your OpenClaw skills directory:
-
 ```bash
-# Clone
+# Clone into OpenClaw skills directory
 git clone https://github.com/DgenKing/openclaw-search.git ~/.openclaw/skills/openclaw-search
-
-# Or symlink from wherever you cloned it
-ln -s /path/to/openclaw-search ~/.openclaw/skills/openclaw-search
 ```
 
 OpenClaw will automatically discover the skill on next agent startup. Verify with:
@@ -44,17 +58,40 @@ openclaw skills list
 
 You should see `openclaw-search` in the output.
 
-### Standalone (without OpenClaw)
+---
 
-You can also use it as a standalone CLI tool:
+## Docker Setup
+
+### Start SearxNG
 
 ```bash
-git clone https://github.com/DgenKing/openclaw-search.git
-cd openclaw-search
-bun run search.ts "your query here"
+cd ~/.openclaw/skills/openclaw-search
+docker compose up -d
 ```
 
-No `bun install` needed — there are zero dependencies.
+### Verify It's Running
+
+```bash
+curl "http://localhost:8888/search?q=test&format=json"
+```
+
+You should see JSON results. If you get a connection error, wait a few seconds for Docker to finish starting up.
+
+### Docker Commands
+
+| Command | What |
+|---------|------|
+| `docker compose up -d` | Start SearxNG (runs in background) |
+| `docker compose down` | Stop SearxNG |
+| `docker compose logs -f` | View logs (Ctrl+C to exit) |
+| `docker compose restart` | Restart after config change |
+
+### Resource Usage
+
+- **Memory**: ~80-120MB
+- **CPU**: Near zero when idle, brief spikes during search
+- **Disk**: ~200MB (Docker image)
+- **Startup**: ~3 seconds
 
 ---
 
@@ -66,7 +103,15 @@ No `bun install` needed — there are zero dependencies.
 bun run search.ts "your search query"
 ```
 
-This queries public SearxNG instances and prints JSON results to stdout.
+The tool automatically connects to your local SearxNG at `http://localhost:8888`.
+
+### Custom Instance
+
+Set `SEARXNG_URL` to use a different instance:
+
+```bash
+SEARXNG_URL=http://my-server:8888 bun run search.ts "query"
+```
 
 ### Command-Line Flags
 
@@ -76,11 +121,10 @@ This queries public SearxNG instances and prints JSON results to stdout.
 | `--category <cat>` | `-c` | Search category | `general` |
 | `--time-range <range>` | `-t` | Time filter | none |
 | `--engines <list>` | `-e` | Specific engines to use | all |
+| `--verbose` | `-v` | Show debug output | false |
 | `--help` | `-h` | Show usage info | — |
 
 ### Categories
-
-Use `--category` to search specific content types:
 
 - `general` — web pages (default)
 - `news` — news articles
@@ -94,15 +138,11 @@ Use `--category` to search specific content types:
 
 ### Time Ranges
 
-Use `--time-range` to filter by recency:
-
 - `day` — last 24 hours
 - `month` — last 30 days
 - `year` — last 12 months
 
 ### Engines
-
-Use `--engines` with a comma-separated list to target specific search engines:
 
 ```bash
 bun run search.ts "query" --engines google,bing,duckduckgo,brave,wikipedia
@@ -113,20 +153,20 @@ bun run search.ts "query" --engines google,bing,duckduckgo,brave,wikipedia
 ## Examples
 
 ```bash
-# Simple web search
-bun run search.ts "how to use Bun test runner"
+# Simple search (uses local Docker by default)
+bun run search.ts "social media best practices"
 
-# Latest news from today
+# Latest news
 bun run search.ts "OpenAI announcements" --category news --time-range day
 
-# Search 2 pages of results from Google and Bing only
-bun run search.ts "TypeScript 5.8 new features" --pages 2 --engines google,bing
-
-# Science/academic results from the past year
-bun run search.ts "transformer architecture improvements" --category science --time-range year
+# Multiple pages
+bun run search.ts "TypeScript 5.8 new features" --pages 2
 
 # Tech-specific search
-bun run search.ts "bun vs node performance benchmarks 2026" --category it
+bun run search.ts "bun vs node performance 2026" --category it
+
+# Debug mode
+bun run search.ts "query" --verbose
 ```
 
 ---
@@ -135,84 +175,56 @@ bun run search.ts "bun vs node performance benchmarks 2026" --category it
 
 ### Successful Search (exit code 0)
 
-All output goes to **stdout** as pretty-printed JSON:
+All output goes to **stdout** as JSON:
 
 ```json
 {
-  "query": "bun typescript tutorial",
+  "query": "social media best practices",
   "results": [
     {
-      "title": "Getting Started with Bun and TypeScript",
-      "url": "https://bun.sh/docs/typescript",
-      "snippet": "Bun natively supports TypeScript out of the box. Every file can be .ts or .tsx with no extra configuration...",
-      "engine": "google",
-      "score": 4.2,
-      "category": "general"
-    },
-    {
-      "title": "Bun TypeScript Guide - Complete Tutorial",
-      "url": "https://example.com/bun-ts-guide",
-      "snippet": "Learn how to set up a Bun project with TypeScript, including testing, bundling, and deployment...",
-      "engine": "duckduckgo",
-      "score": 3.8,
+      "title": "19 social media best practices for faster growth - Hootsuite Blog",
+      "url": "https://blog.hootsuite.com/social-media-best-practices/",
+      "snippet": "Learn how to do audience research, choose the right platforms...",
+      "engine": "startpage",
+      "score": 2.67,
       "category": "general"
     }
   ],
   "count": 10,
   "source": "searxng",
-  "instance_used": "https://priv.au",
+  "instance_used": "http://localhost:8888",
   "page": 1,
-  "timestamp": "2026-03-12T14:30:00.000Z"
+  "timestamp": "2026-03-12T12:27:57.333Z"
 }
 ```
 
 ### Result Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `query` | string | The search query that was sent |
-| `results` | array | Array of search result objects (max 10 per page) |
-| `results[].title` | string | Page title |
-| `results[].url` | string | Full URL to the page |
-| `results[].snippet` | string | Text excerpt from the page matching the query |
-| `results[].engine` | string | Which search engine returned this result (`google`, `bing`, `duckduckgo`, etc.) |
-| `results[].score` | number \| null | Relevance score (higher = more relevant, null if unavailable) |
-| `results[].category` | string | Result category (`general`, `news`, `images`, etc.) |
-| `count` | number | Number of results returned |
-| `source` | string | Always `"searxng"` |
-| `instance_used` | string | URL of the SearxNG instance that served the results |
-| `page` | number | Which page of results this is |
-| `timestamp` | string | ISO 8601 timestamp of when the search was performed |
+| Field | Description |
+|-------|-------------|
+| `query` | The search query |
+| `results` | Array of result objects (max 10 per page) |
+| `results[].title` | Page title |
+| `results[].url` | Full URL |
+| `results[].snippet` | Text excerpt matching the query |
+| `results[].engine` | Which engine returned this (`google`, `bing`, `duckduckgo`, etc.) |
+| `results[].score` | Relevance score (higher = more relevant) |
+| `results[].category` | Result category |
+| `count` | Number of results |
+| `source` | Always `"searxng"` |
+| `instance_used` | URL of the instance that served results |
+| `page` | Page number |
+| `timestamp` | ISO 8601 timestamp |
 
 ### Failed Search (exit code 1)
 
-Errors go to **stderr** as JSON:
+Errors go to **stderr**:
 
 ```json
 {
   "error": "All SearxNG instances failed",
-  "query": "your search query",
-  "attempted_instances": [
-    "https://priv.au",
-    "https://searxng.site",
-    "https://search.rhscz.eu"
-  ]
-}
-```
-
-### Empty Results (exit code 0)
-
-A search that finds nothing is **not** an error — it returns normally with an empty array:
-
-```json
-{
-  "query": "xyzzy123notarealthing",
-  "results": [],
-  "count": 0,
-  "source": "searxng",
-  "instance_used": "https://priv.au",
-  "page": 1,
-  "timestamp": "2026-03-12T14:30:00.000Z"
+  "query": "your query",
+  "attempted_instances": ["http://localhost:8888", "https://search.rhscz.eu"]
 }
 ```
 
@@ -223,85 +235,66 @@ A search that finds nothing is **not** an error — it returns normally with an 
 ### Architecture
 
 ```
-search.ts (CLI entry point)
-    │
-    ├── src/searxng.ts      SearxNG client — builds URLs, fetches, handles fallback
-    ├── src/instances.ts     Instance pool — 10 public servers, shuffle, health tracking
-    ├── src/types.ts         TypeScript interfaces for all data shapes
-    └── src/format.ts        Normalizes raw SearxNG → clean JSON, deduplicates, sorts
+User / OpenClaw Agent
+        │
+        ▼
+search.ts (CLI)
+        │
+        ▼
+src/searxng.ts ─ Try local → Fallback to public
+        │
+   ┌────┴────┐
+   ▼         ▼
+Docker      Public
+SearxNG    Instances
+:8888      (fallback)
 ```
 
-### Instance Fallback
+### Priority Order
 
-The tool ships with 10 hardcoded public SearxNG instances. On each run:
+1. **Local Docker** (`http://localhost:8888`) — tries first, 15s timeout, 3 retries
+2. **Public instances** — fallback if Docker isn't running, 8s timeout
 
-1. The instance list is **shuffled randomly** (distributes load)
-2. The tool tries the first healthy instance
-3. If it fails (timeout, HTTP error, bad JSON), that instance is marked unhealthy
-4. The tool moves to the next instance
-5. This continues until one succeeds or all 10 fail
-
-Each instance gets an **8-second timeout**. Worst case (all fail) takes ~80 seconds, but in practice 1-2 tries is enough.
+If Docker isn't running, the tool automatically falls back to public instances.
 
 ### Deduplication
 
-SearxNG is a meta-search engine — it queries Google, Bing, DuckDuckGo, and others simultaneously. The same page often appears from multiple engines. The tool:
+SearxNG queries multiple engines (Google, Bing, DDG, etc.) and often returns duplicates. The tool:
 
 1. Groups results by URL
-2. Keeps the version with the highest relevance score
-3. Sorts all results by score (descending)
+2. Keeps the version with the highest score
+3. Sorts by score (descending)
 4. Caps at 10 results per page
-
-### Current Instance List
-
-These are all confirmed to support `format=json` (sourced from [searx.space](https://searx.space)):
-
-| Instance | URL |
-|----------|-----|
-| priv.au | `https://priv.au` |
-| search.rhscz.eu | `https://search.rhscz.eu` |
-| searx.tiekoetter.com | `https://searx.tiekoetter.com` |
-| search.inetol.net | `https://search.inetol.net` |
-| searxng.site | `https://searxng.site` |
-| search.rowie.at | `https://search.rowie.at` |
-| ooglester.com | `https://ooglester.com` |
-| search.abohiccups.com | `https://search.abohiccups.com` |
-| search.bladerunn.in | `https://search.bladerunn.in` |
-| searx.namejeff.xyz | `https://searx.namejeff.xyz` |
 
 ---
 
 ## Troubleshooting
 
+### "Connection refused" to localhost:8888
+
+1. Make sure Docker is running: `docker ps`
+2. Start SearxNG: `docker compose up -d`
+3. Wait a few seconds for startup
+4. Check logs: `docker compose logs -f`
+
 ### "All SearxNG instances failed"
 
-This means all 10 instances returned errors or timed out. Common causes:
+1. If Docker isn't running, public instances may be rate-limited
+2. Start your local instance: `docker compose up -d`
+3. Try again
 
-- **Rate limiting**: Public instances limit requests. Wait 10-30 seconds and retry.
-- **Network issues**: Check your internet connection.
-- **Instances down**: Rare for all 10 to be down simultaneously. Check [searx.space](https://searx.space) for live status.
+### Empty results
 
-### Empty results but no error
-
-The search succeeded but found nothing relevant. Try:
-
-- Broader or different search terms
-- Removing `--time-range` filter (it's very restrictive)
-- Using `--category general` instead of a specific category
+The search succeeded but found nothing. Try:
+- Different/broader search terms
+- Removing `--time-range` filter
+- Using `--category general`
 
 ### Slow responses
 
-- Each instance has an 8s timeout. If the first instance is slow, it waits the full 8s before trying the next.
-- The shuffle randomizes which instance goes first, so performance varies between runs.
-- If consistently slow, your network may have high latency to European servers (most instances are EU-based).
-
-### "bun: command not found"
-
-Install Bun:
-
-```bash
-curl -fsSL https://bun.sh/install | bash
-```
+- Local instance has 15s timeout (gives engines time)
+- Public instances have 8s timeout
+- If consistently slow, check `docker compose logs` for errors
 
 ---
 
@@ -309,31 +302,28 @@ curl -fsSL https://bun.sh/install | bash
 
 ```
 ~/.openclaw/skills/openclaw-search/
-├── SKILL.md              OpenClaw skill definition (agent reads this)
-├── search.ts             CLI entry point — parses args, orchestrates search
+├── docker-compose.yml       # SearxNG service definition
+├── searxng/
+│   └── settings.yml        # SearxNG config (limiter off, JSON enabled)
+├── SKILL.md                # OpenClaw skill definition
+├── search.ts               # CLI entry point
 ├── src/
-│   ├── searxng.ts        SearxNG HTTP client with fallback rotation
-│   ├── instances.ts      Instance pool management (shuffle, health tracking)
-│   ├── types.ts          TypeScript interfaces (SearchResult, SearchResponse, etc.)
-│   └── format.ts         Response normalization, deduplication, JSON output
-├── tsconfig.json         Bun TypeScript config
-├── package.json          Project metadata (zero dependencies)
-├── design.md             Architecture design document
-└── README.md             This file
+│   ├── searxng.ts         # HTTP client with local/public fallback
+│   ├── instances.ts       # Instance pool management
+│   ├── types.ts           # TypeScript interfaces
+│   └── format.ts          # Response normalization
+└── README.md
 ```
 
 ---
 
-## Technical Details
+## Security Notes
 
-- **Runtime**: Bun (uses built-in `fetch`, no polyfills)
-- **Language**: TypeScript (strict mode)
-- **Dependencies**: None — zero npm packages
-- **Output**: JSON only on stdout, human-readable errors on stderr
-- **Timeout**: 8 seconds per instance
-- **Max results**: 10 per page (configurable in source)
-- **Max instances tried**: 10 before giving up
-- **SearxNG API**: Uses `format=json` parameter on `/search` endpoint
+- SearxNG binds to localhost only (not exposed to network)
+- No authentication needed for local-only access
+- Docker container runs as non-root by default
+- No data persistence — container is stateless
+- Outbound traffic goes to search engines only
 
 ---
 

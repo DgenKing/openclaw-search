@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { search } from "./src/searxng.ts";
+import { search, SearchError } from "./src/searxng.ts";
 import { outputJson, outputError } from "./src/format.ts";
 
 interface CLIFlags {
@@ -9,6 +9,7 @@ interface CLIFlags {
   category?: string;
   timeRange?: string;
   engines?: string;
+  verbose?: boolean;
 }
 
 function parseArgs(args: string[]): CLIFlags {
@@ -28,6 +29,8 @@ function parseArgs(args: string[]): CLIFlags {
       flags.timeRange = args[++i];
     } else if (arg === "--engines" || arg === "-e") {
       flags.engines = args[++i];
+    } else if (arg === "--verbose" || arg === "-v") {
+      flags.verbose = true;
     } else if (!arg.startsWith("-")) {
       // Treat non-flag argument as query (can be concatenated with previous args)
       if (!flags.query) {
@@ -88,6 +91,7 @@ async function main() {
       category: flags.category,
       timeRange: flags.timeRange,
       engines: flags.engines,
+      verbose: flags.verbose,
     });
 
     outputJson(result);
@@ -96,7 +100,7 @@ async function main() {
     outputError({
       error: error instanceof Error ? error.message : "Unknown error",
       query: flags.query,
-      attempted_instances: [],
+      attempted_instances: error instanceof SearchError ? error.attemptedInstances : [],
     });
     process.exit(1);
   }
