@@ -30,7 +30,7 @@ Copy or symlink the project into your OpenClaw skills directory:
 
 ```bash
 # Clone
-git clone <repo-url> ~/.openclaw/skills/openclaw-search
+git clone https://github.com/DgenKing/openclaw-search.git ~/.openclaw/skills/openclaw-search
 
 # Or symlink from wherever you cloned it
 ln -s /path/to/openclaw-search ~/.openclaw/skills/openclaw-search
@@ -49,7 +49,7 @@ You should see `openclaw-search` in the output.
 You can also use it as a standalone CLI tool:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/DgenKing/openclaw-search.git
 cd openclaw-search
 bun run search.ts "your query here"
 ```
